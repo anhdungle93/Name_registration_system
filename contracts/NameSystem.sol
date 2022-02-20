@@ -33,8 +33,8 @@ contract NameSystem {
     uint256 constant public validityPeriod = 604800; // 1 week
 
     mapping(bytes32 => NameInfo) public names;
-    mapping(address => mapping(bytes32 => bool)) commitments;
-    mapping(address => uint256) refunds;
+    mapping(address => mapping(bytes32 => bool)) public commitments;
+    mapping(address => uint256) public refunds;
 
     /// @param name name we want to calculate the price for
     /// @return the price of the name
@@ -50,26 +50,26 @@ contract NameSystem {
     /// @param name the name msg.sender wants to register
     /// @param salt the salt used in the committed secret
     function registerName(string memory name, uint256 salt) public payable {
-        /// Another option is to save price in a storage variable so we don't have to calculate it everytime the name is registered
+        // Another option is to save price in a storage variable so we don't have to calculate it everytime the name is registered
         uint256 price = namePrice(name);
         require(msg.value >= price, "NameSystem: not enough balance to reserve name.");
         bytes32 secret = keccak256(abi.encode(salt, name));
         require(commitments[msg.sender][secret], "NameSystem: user hasn't commited to this name yet.");
         NameInfo storage nameInfo = names[keccak256(bytes(name))];
-        /// we save the current owner in a memory variable to save gas because we will use it more than once
-        address payable currentOwner = nameInfo.owner;
+        // we save the current owner in a memory variable to save gas because we will use it more than once
+        address currentOwner = nameInfo.owner;
 
-        /// if the name belonged to someone but the registration expired, we record it to refund so the current owner can withdraw later, we use the push and pull mechanics because if we transfer the eth directly here to current owner it can be reverted in case current owner is a smart contract containing a malicious fallback function
+        // if the name belonged to someone but the registration expired, we record it to refund so the current owner can withdraw later, we use the push and pull mechanics because if we transfer the eth directly here to current owner it can be reverted in case current owner is a smart contract containing a malicious fallback function
         if (currentOwner != address(0)) {
             require(nameInfo.validUntil < block.timestamp, "NameSystem: name still belongs to someone.");
             refunds[currentOwner] = refunds[currentOwner] + price;
         }
-        /// register the name to the new owner and update the validity period
+        // register the name to the new owner and update the validity period
         nameInfo.owner = msg.sender;
         nameInfo.validUntil = block.timestamp + validityPeriod;
-        /// send back the change
+        // send back the change
         if (msg.value - price != 0) {payable(msg.sender).transfer(msg.value - price);}
-        emit Registration(msg.sender, currentOwner, name, block.timestamp + validityPeriod)
+        emit Registration(msg.sender, currentOwner, name, block.timestamp + validityPeriod);
     }
 
     function refund() public {
@@ -85,7 +85,7 @@ contract NameSystem {
         NameInfo storage nameInfo = names[keccak256(bytes(name))];
         require(nameInfo.owner == msg.sender, "NameSystem: the name currently doesn't belong to user.");
         nameInfo.validUntil = block.timestamp + validityPeriod;
-        emit Extension(msg.sender, name, block.timestamp + validityPeriod)
+        emit Extension(msg.sender, name, block.timestamp + validityPeriod);
     }
 
     /// @param name name user wants to forfeit
@@ -93,11 +93,12 @@ contract NameSystem {
     function forfeitName(string memory name) public {
         NameInfo storage nameInfo = names[keccak256(bytes(name))];
         require(nameInfo.validUntil < block.timestamp, "NameSystem: the name hasn't expired yet");
-        /// again we use push and pull mechanics to prevent griefing
-        currentOwner = nameInfo.owner;
+        // again we use push and pull mechanics to prevent griefing
+        address currentOwner = nameInfo.owner;
         refunds[currentOwner] = refunds[currentOwner] + namePrice(name);
         nameInfo.owner = address(0);
         nameInfo.validUntil = 0;
         emit Forfeiture(currentOwner, name);
     }
+
 }
